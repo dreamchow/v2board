@@ -84,7 +84,7 @@ class OrderController extends Controller
             if ($amount <= 0) {
                 abort(500, __('Failed to create order, deposit amount must be greater than 0'));
             }
-            if ($amount >= 9999999 ) {
+            if ($amount >= 9999999) {
                 abort(500, __('Deposit amount too large, please contact the administrator'));
             }
             $user = User::find($request->user['id']);
@@ -96,7 +96,7 @@ class OrderController extends Controller
             $order->period = 'deposit';
             $order->trade_no = Helper::generateOrderNo();
             $order->total_amount = $amount;
-            
+
             $orderService->setOrderType($user);
             $orderService->setInvite($user);
 
@@ -104,9 +104,9 @@ class OrderController extends Controller
                 DB::rollback();
                 abort(500, __('Failed to create order'));
             }
-    
+
             DB::commit();
-    
+
             return response([
                 'data' => $order->trade_no
             ]);
@@ -174,14 +174,14 @@ class OrderController extends Controller
             $remainingBalance = $user->balance - $order->total_amount;
             $userService = new UserService();
             if ($remainingBalance > 0) {
-                if (!$userService->addBalance($order->user_id, - $order->total_amount)) {
+                if (!$userService->addBalance($order->user_id, -$order->total_amount)) {
                     DB::rollBack();
                     abort(500, __('Insufficient balance'));
                 }
                 $order->balance_amount = $order->total_amount;
                 $order->total_amount = 0;
             } else {
-                if (!$userService->addBalance($order->user_id, - $user->balance)) {
+                if (!$userService->addBalance($order->user_id, -$user->balance)) {
                     DB::rollBack();
                     abort(500, __('Insufficient balance'));
                 }
@@ -233,12 +233,25 @@ class OrderController extends Controller
         }
         $order->payment_id = $method;
         if (!$order->save()) abort(500, __('Request failed, please try again later'));
+        // 获取 referer 信息
+        $host = $request->getSchemeAndHttpHost();
+        $referer = $request->header('referer');
+        if ($referer) {
+            $refererParts = parse_url($referer);
+            if (isset($refererParts['scheme']) && isset($refererParts['host'])) {
+                $host = $refererParts['scheme'] . '://' . $refererParts['host'];
+                if (isset($refererParts['port'])) {
+                    $host .= ':' . $refererParts['port'];
+                }
+            }
+        }
+
         $result = $paymentService->pay([
             'trade_no' => $tradeNo,
             'total_amount' => isset($order->handling_amount) ? ($order->total_amount + $order->handling_amount) : $order->total_amount,
             'user_id' => $order->user_id,
             'stripe_token' => $request->input('token')
-        ]);
+        ], $host);
         return response([
             'type' => $result['type'],
             'data' => $result['data']
@@ -301,7 +314,8 @@ class OrderController extends Controller
         ]);
     }
 
-    private function getbounus($total_amount) {
+    private function getbounus($total_amount)
+    {
         $deposit_bounus = config('v2board.deposit_bounus', []);
         if (empty($deposit_bounus) || $deposit_bounus[0] === null) {
             return 0;
